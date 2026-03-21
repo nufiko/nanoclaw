@@ -42,8 +42,11 @@ netsh interface portproxy show all
 Test-NetConnection localhost -Port 8110
 ```
 
-**Note:** This proxy does not survive a Windows reboot. Re-run the `portproxy add` command after each reboot,
-or create a scheduled task to run it at startup.
+**Make it persistent** — create a scheduled task to run at login (paste as a single line in PowerShell as Administrator):
+
+```powershell
+$action = New-ScheduledTaskAction -Execute "netsh" -Argument "interface portproxy add v4tov4 listenport=8110 listenaddress=0.0.0.0 connectport=80 connectaddress=10.162.20.61"; $trigger = New-ScheduledTaskTrigger -AtLogOn; $settings = New-ScheduledTaskSettingsSet -RunOnlyIfNetworkAvailable; Register-ScheduledTask -TaskName "TeamCity VPN Proxy" -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force
+```
 
 ## MCP Configuration
 
