@@ -31,7 +31,8 @@ ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
 # Install agent-browser and claude-code globally
-RUN npm install -g agent-browser @anthropic-ai/claude-code
+# mcp-atlassian and jsdom installed together so jsdom is resolvable
+RUN npm install -g agent-browser @anthropic-ai/claude-code jsdom mcp-atlassian
 
 # Create app directory
 WORKDIR /app

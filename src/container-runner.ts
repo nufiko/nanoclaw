@@ -122,6 +122,24 @@ function buildVolumeMounts(
     '.claude',
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
+
+  // Mount .claude.json (adjacent to .claude/ dir) so Claude Code finds its
+  // config file and doesn't log repeated "configuration file not found" warnings.
+  const claudeJsonHost = path.join(
+    DATA_DIR,
+    'sessions',
+    group.folder,
+    '.claude.json',
+  );
+  if (!fs.existsSync(claudeJsonHost)) {
+    fs.writeFileSync(claudeJsonHost, JSON.stringify({}));
+  }
+  mounts.push({
+    hostPath: claudeJsonHost,
+    containerPath: '/home/node/.claude.json',
+    readonly: false,
+  });
+
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
   if (!fs.existsSync(settingsFile)) {
     fs.writeFileSync(
@@ -241,7 +259,9 @@ function buildContainerArgs(
 
   // Inject per-group environment variables (e.g. MCP server credentials)
   if (group.containerConfig?.environment) {
-    for (const [key, value] of Object.entries(group.containerConfig.environment)) {
+    for (const [key, value] of Object.entries(
+      group.containerConfig.environment,
+    )) {
       args.push('-e', `${key}=${value}`);
     }
   }

@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'http';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { writeFileSync, unlinkSync } from 'fs';
 import type { AddressInfo } from 'net';
 
 const mockEnv: Record<string, string> = {};
@@ -11,7 +14,11 @@ vi.mock('./logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn(), warn: vi.fn() },
 }));
 
-import { startCredentialProxy } from './credential-proxy.js';
+import {
+  startCredentialProxy,
+  getValidOAuthToken,
+  _setCredentialsPathForTesting,
+} from './credential-proxy.js';
 
 function makeRequest(
   port: number,
@@ -52,6 +59,8 @@ describe('credential-proxy', () => {
 
   beforeEach(async () => {
     lastUpstreamHeaders = {};
+    // Point credentials path at a non-existent file so tests use .env token
+    _setCredentialsPathForTesting('/nonexistent/.credentials.json');
 
     upstreamServer = http.createServer((req, res) => {
       lastUpstreamHeaders = { ...req.headers };
@@ -68,6 +77,7 @@ describe('credential-proxy', () => {
     await new Promise<void>((r) => proxyServer?.close(() => r()));
     await new Promise<void>((r) => upstreamServer?.close(() => r()));
     for (const key of Object.keys(mockEnv)) delete mockEnv[key];
+    _setCredentialsPathForTesting('/nonexistent/.credentials.json');
   });
 
   async function startProxy(env: Record<string, string>): Promise<number> {
@@ -188,5 +198,65 @@ describe('credential-proxy', () => {
 
     expect(res.statusCode).toBe(502);
     expect(res.body).toBe('Bad Gateway');
+  });
+});
+
+describe('getValidOAuthToken', () => {
+  const tmpCreds = join(tmpdir(), 'nanoclaw-test-credentials.json');
+
+  afterEach(() => {
+    try {
+      unlinkSync(tmpCreds);
+    } catch {}
+    _setCredentialsPathForTesting('/nonexistent/.credentials.json');
+  });
+
+  it('returns token from credentials file when valid', async () => {
+    writeFileSync(
+      tmpCreds,
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: 'file-token',
+          refreshToken: 'refresh-token',
+          expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour from now
+        },
+      }),
+    );
+    _setCredentialsPathForTesting(tmpCreds);
+
+    const token = await getValidOAuthToken('env-token');
+    expect(token).toBe('file-token');
+  });
+
+  it('prefers credentials file over env token', async () => {
+    writeFileSync(
+      tmpCreds,
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: 'file-token',
+          refreshToken: 'refresh-token',
+          expiresAt: Date.now() + 60 * 60 * 1000,
+        },
+      }),
+    );
+    _setCredentialsPathForTesting(tmpCreds);
+
+    const token = await getValidOAuthToken('env-token');
+    expect(token).toBe('file-token');
+  });
+
+  it('falls back to env token when credentials file is missing', async () => {
+    _setCredentialsPathForTesting('/nonexistent/.credentials.json');
+
+    const token = await getValidOAuthToken('env-fallback-token');
+    expect(token).toBe('env-fallback-token');
+  });
+
+  it('falls back to env token when credentials file has no claudeAiOauth', async () => {
+    writeFileSync(tmpCreds, JSON.stringify({}));
+    _setCredentialsPathForTesting(tmpCreds);
+
+    const token = await getValidOAuthToken('env-fallback-token');
+    expect(token).toBe('env-fallback-token');
   });
 });
