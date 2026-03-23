@@ -63,41 +63,49 @@ export async function getValidOAuthToken(
   }
 
   // Try ~/.claude/.credentials.json (kept fresh by Claude Code)
+  let creds: ClaudeOAuthCreds;
   try {
-    const creds: ClaudeOAuthCreds = JSON.parse(
-      readFileSync(credentialsPath, 'utf8'),
-    );
-    const oauth = creds.claudeAiOauth;
-
-    if (oauth) {
-      if (oauth.expiresAt - Date.now() > TOKEN_EXPIRY_BUFFER_MS) {
-        tokenCache = { token: oauth.accessToken, expiresAt: oauth.expiresAt };
-        return oauth.accessToken;
-      }
-
-      // Near expiry — try to refresh
-      logger.info('OAuth token near expiry, attempting refresh');
-      const refreshed = await refreshOAuthToken(oauth.refreshToken);
-      if (refreshed) {
-        const updated: ClaudeOAuthCreds = {
-          ...creds,
-          claudeAiOauth: { ...oauth, ...refreshed },
-        };
-        writeFileSync(credentialsPath, JSON.stringify(updated, null, 2));
-        tokenCache = {
-          token: refreshed.accessToken,
-          expiresAt: refreshed.expiresAt,
-        };
-        logger.info('OAuth token refreshed successfully');
-        return refreshed.accessToken;
-      }
-      logger.warn('OAuth token refresh failed, falling back to .env token');
-    }
+    creds = JSON.parse(readFileSync(credentialsPath, 'utf8'));
   } catch {
-    // credentials file not found or unreadable — fall through
+    // credentials file not found or unreadable — fall back to .env token
+    return envToken || null;
   }
 
-  return envToken || null;
+  const oauth = creds.claudeAiOauth;
+  if (!oauth) {
+    // File exists but no OAuth creds — fall back to .env token
+    return envToken || null;
+  }
+
+  if (oauth.expiresAt - Date.now() > TOKEN_EXPIRY_BUFFER_MS) {
+    tokenCache = { token: oauth.accessToken, expiresAt: oauth.expiresAt };
+    return oauth.accessToken;
+  }
+
+  // Near expiry or expired — try to refresh
+  logger.info('OAuth token near expiry, attempting refresh');
+  const refreshed = await refreshOAuthToken(oauth.refreshToken);
+  if (refreshed) {
+    const updated: ClaudeOAuthCreds = {
+      ...creds,
+      claudeAiOauth: { ...oauth, ...refreshed },
+    };
+    writeFileSync(credentialsPath, JSON.stringify(updated, null, 2));
+    tokenCache = {
+      token: refreshed.accessToken,
+      expiresAt: refreshed.expiresAt,
+    };
+    logger.info('OAuth token refreshed successfully');
+    return refreshed.accessToken;
+  }
+
+  // Refresh failed — do NOT fall back to a potentially stale .env token.
+  // Return null so the proxy surfaces a proper auth error rather than
+  // forwarding an expired token. Run `claude auth login` to re-authenticate.
+  logger.warn(
+    'OAuth token refresh failed; run `claude auth login` to re-authenticate',
+  );
+  return null;
 }
 
 async function refreshOAuthToken(refreshToken: string): Promise<{
