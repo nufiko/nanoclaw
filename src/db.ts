@@ -93,6 +93,15 @@ function createSchema(database: Database.Database): void {
     /* column already exists */
   }
 
+  // Add run_mode column if it doesn't exist (migration for existing DBs)
+  try {
+    database.exec(
+      `ALTER TABLE scheduled_tasks ADD COLUMN run_mode TEXT DEFAULT 'foreground'`,
+    );
+  } catch {
+    /* column already exists */
+  }
+
   // Add is_bot_message column if it doesn't exist (migration for existing DBs)
   try {
     database.exec(
@@ -368,8 +377,8 @@ export function createTask(
 ): void {
   db.prepare(
     `
-    INSERT INTO scheduled_tasks (id, group_folder, chat_jid, prompt, schedule_type, schedule_value, context_mode, next_run, status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO scheduled_tasks (id, group_folder, chat_jid, prompt, schedule_type, schedule_value, context_mode, run_mode, next_run, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     task.id,
@@ -379,6 +388,7 @@ export function createTask(
     task.schedule_type,
     task.schedule_value,
     task.context_mode || 'isolated',
+    task.run_mode || 'foreground',
     task.next_run,
     task.status,
     task.created_at,
@@ -395,6 +405,18 @@ export function getTasksForGroup(groupFolder: string): ScheduledTask[] {
   return db
     .prepare(
       'SELECT * FROM scheduled_tasks WHERE group_folder = ? ORDER BY created_at DESC',
+    )
+    .all(groupFolder) as ScheduledTask[];
+}
+
+export function getActiveBackgroundTasksForGroup(
+  groupFolder: string,
+): ScheduledTask[] {
+  return db
+    .prepare(
+      `SELECT * FROM scheduled_tasks
+       WHERE group_folder = ? AND run_mode = 'background' AND status = 'active'
+       ORDER BY created_at DESC`,
     )
     .all(groupFolder) as ScheduledTask[];
 }

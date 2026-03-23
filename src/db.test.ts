@@ -4,6 +4,7 @@ import {
   _initTestDatabase,
   createTask,
   deleteTask,
+  getActiveBackgroundTasksForGroup,
   getAllChats,
   getAllRegisteredGroups,
   getMessagesSince,
@@ -480,5 +481,56 @@ describe('registered group isMain', () => {
     const group = groups['group@g.us'];
     expect(group).toBeDefined();
     expect(group.isMain).toBeUndefined();
+  });
+});
+
+describe('getActiveBackgroundTasksForGroup', () => {
+  function makeTask(overrides: Partial<Parameters<typeof createTask>[0]> = {}) {
+    const base = {
+      id: `task-${Math.random().toString(36).slice(2)}`,
+      group_folder: 'whatsapp_main',
+      chat_jid: 'main@g.us',
+      prompt: 'do something',
+      schedule_type: 'once' as const,
+      schedule_value: '2026-03-23T14:00:00',
+      context_mode: 'isolated' as const,
+      run_mode: 'background' as const,
+      next_run: '2026-03-23T14:00:00.000Z',
+      status: 'active' as const,
+      created_at: new Date().toISOString(),
+    };
+    return { ...base, ...overrides };
+  }
+
+  it('returns active background tasks for the group', () => {
+    createTask(makeTask({ id: 'bg-1' }));
+    const result = getActiveBackgroundTasksForGroup('whatsapp_main');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('bg-1');
+  });
+
+  it('does not return foreground tasks', () => {
+    createTask(makeTask({ id: 'fg-1', run_mode: 'foreground' }));
+    const result = getActiveBackgroundTasksForGroup('whatsapp_main');
+    expect(result).toHaveLength(0);
+  });
+
+  it('does not return paused background tasks', () => {
+    createTask(makeTask({ id: 'bg-paused', status: 'paused' }));
+    const result = getActiveBackgroundTasksForGroup('whatsapp_main');
+    expect(result).toHaveLength(0);
+  });
+
+  it('does not return background tasks for other groups', () => {
+    createTask(makeTask({ id: 'bg-other', group_folder: 'other-group' }));
+    const result = getActiveBackgroundTasksForGroup('whatsapp_main');
+    expect(result).toHaveLength(0);
+  });
+
+  it('returns multiple active background tasks if they exist', () => {
+    createTask(makeTask({ id: 'bg-2' }));
+    createTask(makeTask({ id: 'bg-3' }));
+    const result = getActiveBackgroundTasksForGroup('whatsapp_main');
+    expect(result).toHaveLength(2);
   });
 });
