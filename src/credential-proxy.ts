@@ -51,6 +51,11 @@ export function _setCredentialsPathForTesting(path: string): void {
   tokenCache = null;
 }
 
+/** Invalidate the in-memory token cache, forcing re-read on the next request. */
+export function invalidateTokenCache(): void {
+  tokenCache = null;
+}
+
 export async function getValidOAuthToken(
   envToken?: string,
 ): Promise<string | null> {
