@@ -703,17 +703,33 @@ describe('schedule_task background duplicate guard', () => {
     const messages: Array<[string, string]> = [];
     const guardDeps: IpcDeps = {
       ...deps,
-      sendMessage: async (jid, text) => { messages.push([jid, text]); },
+      sendMessage: async (jid, text) => {
+        messages.push([jid, text]);
+      },
     };
 
     // Create first background task
-    await processTaskIpc(makeScheduleData({ prompt: 'first task' }), 'whatsapp_main', true, guardDeps);
-    const countAfterFirst = getAllTasks().filter(t => t.run_mode === 'background').length;
+    await processTaskIpc(
+      makeScheduleData({ prompt: 'first task' }),
+      'whatsapp_main',
+      true,
+      guardDeps,
+    );
+    const countAfterFirst = getAllTasks().filter(
+      (t) => t.run_mode === 'background',
+    ).length;
     expect(countAfterFirst).toBe(1);
 
     // Attempt second background task
-    await processTaskIpc(makeScheduleData({ prompt: 'second task' }), 'whatsapp_main', true, guardDeps);
-    const countAfterSecond = getAllTasks().filter(t => t.run_mode === 'background').length;
+    await processTaskIpc(
+      makeScheduleData({ prompt: 'second task' }),
+      'whatsapp_main',
+      true,
+      guardDeps,
+    );
+    const countAfterSecond = getAllTasks().filter(
+      (t) => t.run_mode === 'background',
+    ).length;
     expect(countAfterSecond).toBe(1); // still 1, second was blocked
 
     expect(messages).toHaveLength(1);
@@ -723,13 +739,27 @@ describe('schedule_task background duplicate guard', () => {
 
   it('allows a new background task after existing one is paused', async () => {
     // Create and then pause the first
-    await processTaskIpc(makeScheduleData({ prompt: 'first' }), 'whatsapp_main', true, deps);
-    const [firstTask] = getAllTasks().filter(t => t.run_mode === 'background');
+    await processTaskIpc(
+      makeScheduleData({ prompt: 'first' }),
+      'whatsapp_main',
+      true,
+      deps,
+    );
+    const [firstTask] = getAllTasks().filter(
+      (t) => t.run_mode === 'background',
+    );
     updateTask(firstTask.id, { status: 'paused' });
 
     // Now schedule a new one — should succeed
-    await processTaskIpc(makeScheduleData({ prompt: 'second' }), 'whatsapp_main', true, deps);
-    const active = getAllTasks().filter(t => t.run_mode === 'background' && t.status === 'active');
+    await processTaskIpc(
+      makeScheduleData({ prompt: 'second' }),
+      'whatsapp_main',
+      true,
+      deps,
+    );
+    const active = getAllTasks().filter(
+      (t) => t.run_mode === 'background' && t.status === 'active',
+    );
     expect(active).toHaveLength(1);
     expect(active[0].prompt).toBe('second');
   });
