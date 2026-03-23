@@ -143,7 +143,7 @@ async function runTask(
       schedule_value: t.schedule_value,
       status: t.status,
       next_run: t.next_run,
-      run_mode: 'foreground',
+      run_mode: t.run_mode ?? 'foreground',
       last_result: t.last_result ?? null,
     })),
   );
