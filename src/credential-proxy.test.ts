@@ -17,6 +17,7 @@ vi.mock('./logger.js', () => ({
 import {
   startCredentialProxy,
   getValidOAuthToken,
+  invalidateTokenCache,
   _setCredentialsPathForTesting,
 } from './credential-proxy.js';
 
@@ -258,5 +259,51 @@ describe('getValidOAuthToken', () => {
 
     const token = await getValidOAuthToken('env-fallback-token');
     expect(token).toBe('env-fallback-token');
+  });
+});
+
+describe('invalidateTokenCache', () => {
+  it('forces re-read of credentials file on next getValidOAuthToken call', async () => {
+    const credFile = join(tmpdir(), `creds-invalidate-${Date.now()}.json`);
+    const expiresAt = Date.now() + 60 * 60 * 1000;
+    writeFileSync(
+      credFile,
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: 'token-a',
+          refreshToken: 'refresh-a',
+          expiresAt,
+        },
+      }),
+    );
+
+    _setCredentialsPathForTesting(credFile);
+
+    // Populate the cache
+    const first = await getValidOAuthToken();
+    expect(first).toBe('token-a');
+
+    // Write a new token to disk
+    writeFileSync(
+      credFile,
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: 'token-b',
+          refreshToken: 'refresh-b',
+          expiresAt,
+        },
+      }),
+    );
+
+    // Without invalidation, cache returns old token
+    const cached = await getValidOAuthToken();
+    expect(cached).toBe('token-a');
+
+    // After invalidation, re-reads disk
+    invalidateTokenCache();
+    const fresh = await getValidOAuthToken();
+    expect(fresh).toBe('token-b');
+
+    try { unlinkSync(credFile); } catch { /* ignore */ }
   });
 });
