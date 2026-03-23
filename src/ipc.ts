@@ -5,7 +5,7 @@ import { CronExpressionParser } from 'cron-parser';
 
 import { DATA_DIR, IPC_POLL_INTERVAL, TIMEZONE } from './config.js';
 import { AvailableGroup } from './container-runner.js';
-import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
+import { createTask, deleteTask, getActiveBackgroundTasksForGroup, getTaskById, updateTask } from './db.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
@@ -162,6 +162,7 @@ export async function processTaskIpc(
     schedule_type?: string;
     schedule_value?: string;
     context_mode?: string;
+    run_mode?: string;
     groupFolder?: string;
     chatJid?: string;
     targetJid?: string;
@@ -255,6 +256,24 @@ export async function processTaskIpc(
           data.context_mode === 'group' || data.context_mode === 'isolated'
             ? data.context_mode
             : 'isolated';
+        const runMode = data.run_mode === 'background' ? 'background' : 'foreground';
+
+        // Background task duplicate guard (safety net — primary check is in MCP tool)
+        if (runMode === 'background') {
+          const existing = getActiveBackgroundTasksForGroup(targetFolder);
+          if (existing.length > 0) {
+            logger.warn(
+              { sourceGroup, targetFolder, existingTaskId: existing[0].id },
+              'Background task duplicate blocked by host guard',
+            );
+            await deps.sendMessage(
+              targetJid,
+              `⚠️ Background task already running (${existing[0].id}). Cancel it first or wait for it to finish.`,
+            );
+            break;
+          }
+        }
+
         createTask({
           id: taskId,
           group_folder: targetFolder,
@@ -263,6 +282,7 @@ export async function processTaskIpc(
           schedule_type: scheduleType,
           schedule_value: data.schedule_value,
           context_mode: contextMode,
+          run_mode: runMode,
           next_run: nextRun,
           status: 'active',
           created_at: new Date().toISOString(),
