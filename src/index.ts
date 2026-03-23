@@ -50,6 +50,7 @@ import {
   startRemoteControl,
   stopRemoteControl,
 } from './remote-control.js';
+import { handleReauth } from './reauth.js';
 import {
   isSenderAllowed,
   isTriggerAllowed,
@@ -615,6 +616,20 @@ async function main(): Promise<void> {
         handleRemoteControl(trimmed, chatJid, msg).catch((err) =>
           logger.error({ err, chatJid }, 'Remote control command error'),
         );
+        return;
+      }
+
+      // Re-auth command — host-side only, main group only, never stored
+      if (trimmed === '!reauth') {
+        const group = registeredGroups[chatJid];
+        if (group?.isMain) {
+          const channel = findChannel(channels, chatJid);
+          if (channel) {
+            handleReauth((text) => channel.sendMessage(chatJid, text)).catch(
+              (err) => logger.error({ err, chatJid }, 'Reauth command error'),
+            );
+          }
+        }
         return;
       }
 
