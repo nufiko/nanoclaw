@@ -90,6 +90,9 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
     schedule_type: z.enum(['cron', 'interval', 'once']).describe('cron=recurring at specific times, interval=recurring every N ms, once=run once at specific time'),
     schedule_value: z.string().describe('cron: "*/5 * * * *" | interval: milliseconds like "300000" | once: local timestamp like "2026-02-01T15:30:00" (no Z suffix!)'),
     context_mode: z.enum(['group', 'isolated']).default('group').describe('group=runs with chat history and memory, isolated=fresh session (include context in prompt)'),
+    run_mode: z.enum(['foreground', 'background']).default('foreground').describe(
+      'foreground=runs in the group queue (blocks WhatsApp), background=runs in a separate queue (WhatsApp stays responsive). Use background for long coding tasks.'
+    ),
     target_group_jid: z.string().optional().describe('(Main group only) JID of the group to schedule the task for. Defaults to the current group.'),
   },
   async (args) => {
@@ -127,6 +130,40 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
       }
     }
 
+    // Background duplicate check: read current_tasks.json and block if one is already active
+    if (args.run_mode === 'background') {
+      const tasksFile = path.join(IPC_DIR, 'current_tasks.json');
+      let existingBgTask: { id: string; prompt: string } | null = null;
+      try {
+        if (fs.existsSync(tasksFile)) {
+          const all = JSON.parse(fs.readFileSync(tasksFile, 'utf-8')) as Array<{
+            id: string;
+            prompt: string;
+            run_mode?: string;
+            status?: string;
+          }>;
+          const found = all.find(
+            (t) => t.run_mode === 'background' && t.status === 'active',
+          );
+          if (found) existingBgTask = { id: found.id, prompt: found.prompt };
+        }
+      } catch {
+        // If we can't read the snapshot, proceed (host guard will catch duplicates)
+      }
+
+      if (existingBgTask) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `A background task is already running: ${existingBgTask.id} — "${existingBgTask.prompt.slice(0, 60)}..."\nCancel it with cancel_task("${existingBgTask.id}") then retry, or wait for it to finish.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+
     // Non-main groups can only schedule for themselves
     const targetJid = isMain && args.target_group_jid ? args.target_group_jid : chatJid;
 
@@ -139,6 +176,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
       schedule_type: args.schedule_type,
       schedule_value: args.schedule_value,
       context_mode: args.context_mode || 'group',
+      run_mode: args.run_mode || 'foreground',
       targetJid,
       createdBy: groupFolder,
       timestamp: new Date().toISOString(),
@@ -176,8 +214,22 @@ server.tool(
 
       const formatted = tasks
         .map(
-          (t: { id: string; prompt: string; schedule_type: string; schedule_value: string; status: string; next_run: string }) =>
-            `- [${t.id}] ${t.prompt.slice(0, 50)}... (${t.schedule_type}: ${t.schedule_value}) - ${t.status}, next: ${t.next_run || 'N/A'}`,
+          (t: {
+            id: string;
+            prompt: string;
+            schedule_type: string;
+            schedule_value: string;
+            status: string;
+            next_run: string | null;
+            run_mode?: string;
+            last_result?: string | null;
+          }) => {
+            const lastResult = t.last_result
+              ? t.last_result.slice(0, 150)
+              : '(none yet)';
+            const runMode = t.run_mode ?? 'foreground';
+            return `- [${t.id}] ${t.prompt.slice(0, 50)}... (${t.schedule_type}: ${t.schedule_value}) — ${runMode}, ${t.status}, last: ${lastResult}, next: ${t.next_run || 'N/A'}`;
+          },
         )
         .join('\n');
 
