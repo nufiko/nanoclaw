@@ -304,6 +304,10 @@ describe('invalidateTokenCache', () => {
     const fresh = await getValidOAuthToken();
     expect(fresh).toBe('token-b');
 
-    try { unlinkSync(credFile); } catch { /* ignore */ }
+    try {
+      unlinkSync(credFile);
+    } catch {
+      /* ignore */
+    }
   });
 });
