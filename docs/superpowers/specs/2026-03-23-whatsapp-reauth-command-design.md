@@ -31,7 +31,7 @@ export async function handleReauth(
 
 ### Integration in `index.ts`
 
-Intercept `!reauth` in `onMessage` before message storage — identical to the `/remote-control` interception pattern:
+Intercept `!reauth` in `onMessage` before message storage — identical to the `/remote-control` interception pattern. The `!` prefix intentionally differentiates host-level commands from agent-routed `/` slash commands, so containers never see or act on them:
 
 ```ts
 if (trimmed === '!reauth') {
@@ -57,7 +57,8 @@ User sends "!reauth"
 
 handleReauth:
   1. If activeReauth exists → send "Re-authentication already in progress." → return
-  2. Spawn: claude auth login, env: { ...process.env, BROWSER: 'cat' }
+  2. Set activeReauth; spawn: claude auth login, env: { ...process.env, BROWSER: 'cat' }
+     (if spawn throws synchronously → send failure message, activeReauth = null, return)
   3. Read stdout line-by-line
   4. On line matching /visit: (https?:\/\/\S+)/
        → send URL to WhatsApp
@@ -66,10 +67,12 @@ handleReauth:
        → clear timeout
        → invalidateTokenCache()
        → send "Authentication successful. New token is active."
-  6. On process exit (non-zero) or timeout
+       → activeReauth = null
+  6. On process exit (non-zero) or timeout fires
        → kill process if still running
        → send "Authentication failed or timed out. Run `claude auth login` manually."
-  7. activeReauth = null
+       → activeReauth = null
+  (step 5/6 are the only terminal paths; activeReauth = null runs in every branch)
 ```
 
 ## Error Handling
