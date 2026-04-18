@@ -9,6 +9,7 @@ const envConfig = readEnvFile([
   'ASSISTANT_NAME',
   'ASSISTANT_HAS_OWN_NUMBER',
   'OLLAMA_ADMIN_TOOLS',
+  'OLLAMA_MODEL',
   'ONECLI_URL',
   'ONECLI_API_KEY',
   'GOOGLE_CLIENT_ID',
@@ -68,6 +69,13 @@ export const MAX_MESSAGES_PER_PROMPT = Math.max(
 );
 export const IPC_POLL_INTERVAL = 1000;
 export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '1800000', 10);
+
+export const OLLAMA_MODEL =
+  process.env.OLLAMA_MODEL || envConfig.OLLAMA_MODEL || '';
+export const OLLAMA_PROXY_PORT = parseInt(
+  process.env.OLLAMA_PROXY_PORT || '11436',
+  10,
+);
 
 export const GOOGLE_CLIENT_ID =
   process.env.GOOGLE_CLIENT_ID || envConfig.GOOGLE_CLIENT_ID || '';

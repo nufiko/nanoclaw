@@ -8,10 +8,13 @@ import {
   GROUPS_DIR,
   IDLE_TIMEOUT,
   MAX_MESSAGES_PER_PROMPT,
+  OLLAMA_MODEL,
+  OLLAMA_PROXY_PORT,
   POLL_INTERVAL,
   TIMEZONE,
   TRIGGER_PATTERN,
 } from './config.js';
+import { startOllamaProxy } from './ollama-proxy.js';
 import './channels/index.js';
 import {
   getChannelFactory,
@@ -628,9 +631,19 @@ async function main(): Promise<void> {
 
   restoreRemoteControl();
 
+  // Start Ollama proxy if configured (replaces OneCLI for all containers)
+  const ollamaProxyServer = OLLAMA_MODEL
+    ? await startOllamaProxy(
+        OLLAMA_MODEL,
+        process.env.OLLAMA_HOST || 'http://localhost:11434',
+        OLLAMA_PROXY_PORT,
+      )
+    : null;
+
   // Graceful shutdown handlers
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutdown signal received');
+    ollamaProxyServer?.close();
     await queue.shutdown(10000);
     for (const ch of channels) await ch.disconnect();
     process.exit(0);

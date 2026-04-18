@@ -19,6 +19,8 @@ import {
   GROUPS_DIR,
   IDLE_TIMEOUT,
   OLLAMA_ADMIN_TOOLS,
+  OLLAMA_MODEL,
+  OLLAMA_PROXY_PORT,
   ONECLI_API_KEY,
   ONECLI_URL,
   TIMEZONE,
@@ -27,6 +29,7 @@ import { getGoogleAccessToken } from './google-auth.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
 import {
+  CONTAINER_HOST_GATEWAY,
   CONTAINER_RUNTIME_BIN,
   hostGatewayArgs,
   readonlyMountArgs,
@@ -313,18 +316,28 @@ async function buildContainerArgs(
     args.push('-e', 'OLLAMA_ADMIN_TOOLS=true');
   }
 
-  // OneCLI gateway handles credential injection — containers never see real secrets.
-  const onecliApplied = await onecli.applyContainerConfig(args, {
-    addHostMapping: false, // NanoClaw already handles host gateway
-    agent: agentIdentifier,
-  });
-  if (onecliApplied) {
-    logger.info({ containerName }, 'OneCLI gateway config applied');
-  } else {
-    logger.warn(
-      { containerName },
-      'OneCLI gateway not reachable — container will have no credentials',
+  if (OLLAMA_MODEL) {
+    // Route through local Ollama proxy instead of OneCLI
+    args.push(
+      '-e',
+      `ANTHROPIC_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${OLLAMA_PROXY_PORT}`,
     );
+    args.push('-e', 'ANTHROPIC_API_KEY=ollama');
+    logger.info({ containerName, model: OLLAMA_MODEL }, 'Using Ollama proxy');
+  } else {
+    // OneCLI gateway handles credential injection — containers never see real secrets.
+    const onecliApplied = await onecli.applyContainerConfig(args, {
+      addHostMapping: false, // NanoClaw already handles host gateway
+      agent: agentIdentifier,
+    });
+    if (onecliApplied) {
+      logger.info({ containerName }, 'OneCLI gateway config applied');
+    } else {
+      logger.warn(
+        { containerName },
+        'OneCLI gateway not reachable — container will have no credentials',
+      );
+    }
   }
 
   // Inject per-group environment variables (e.g. MCP server credentials)
