@@ -15,6 +15,8 @@ vi.mock('./config.js', () => ({
   DATA_DIR: '/tmp/nanoclaw-test-data',
   GROUPS_DIR: '/tmp/nanoclaw-test-groups',
   IDLE_TIMEOUT: 1800000, // 30min
+  ONECLI_API_KEY: '',
+  ONECLI_URL: 'http://localhost:10254',
   TIMEZONE: 'America/Los_Angeles',
 }));
 
@@ -54,6 +56,18 @@ vi.mock('./mount-security.js', () => ({
 // Mock credential proxy
 vi.mock('./credential-proxy.js', () => ({
   detectAuthMode: vi.fn(() => 'oauth'),
+}));
+
+// Mock container-runtime
+vi.mock('./container-runtime.js', () => ({
+  CONTAINER_RUNTIME_BIN: 'docker',
+  CONTAINER_HOST_GATEWAY: '172.17.0.1',
+  PROXY_BIND_HOST: '0.0.0.0',
+  hostGatewayArgs: () => [],
+  readonlyMountArgs: (h: string, c: string) => ['-v', `${h}:${c}:ro`],
+  stopContainer: vi.fn(),
+  ensureContainerRuntimeRunning: vi.fn(),
+  cleanupOrphans: vi.fn(),
 }));
 
 // Create a controllable fake ChildProcess
