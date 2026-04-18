@@ -13,6 +13,9 @@ import {
   CONTAINER_MAX_OUTPUT_SIZE,
   CONTAINER_TIMEOUT,
   DATA_DIR,
+  GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET,
+  GOOGLE_REFRESH_TOKEN,
   GROUPS_DIR,
   IDLE_TIMEOUT,
   OLLAMA_ADMIN_TOOLS,
@@ -20,6 +23,7 @@ import {
   ONECLI_URL,
   TIMEZONE,
 } from './config.js';
+import { getGoogleAccessToken } from './google-auth.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
 import {
@@ -164,29 +168,8 @@ function buildVolumeMounts(
     readonly: false,
   });
 
-  const settingsFile = path.join(groupSessionsDir, 'settings.json');
-  if (!fs.existsSync(settingsFile)) {
-    fs.writeFileSync(
-      settingsFile,
-      JSON.stringify(
-        {
-          env: {
-            // Enable agent swarms (subagent orchestration)
-            // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
-            CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
-            // Load CLAUDE.md from additional mounted directories
-            // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
-            CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
-            // Enable Claude's memory feature (persists user preferences between sessions)
-            // https://code.claude.com/docs/en/memory#manage-auto-memory
-            CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
-          },
-        },
-        null,
-        2,
-      ) + '\n',
-    );
-  }
+  // settings.json is written by writeGroupSettings() in runContainerAgent
+  // after the Google access token is fetched. We just ensure the dir exists here.
 
   // Sync skills from container/skills/ into each group's .claude/skills/
   const skillsSrc = path.join(process.cwd(), 'container', 'skills');
@@ -263,6 +246,57 @@ function buildVolumeMounts(
   return mounts;
 }
 
+function writeGroupSettings(
+  groupFolder: string,
+  googleToken: string | null,
+): void {
+  const settingsFile = path.join(
+    DATA_DIR,
+    'sessions',
+    groupFolder,
+    '.claude',
+    'settings.json',
+  );
+
+  let existing: Record<string, unknown> = {};
+  try {
+    existing = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  } catch {
+    /* file doesn't exist yet — start fresh */
+  }
+
+  const settings: Record<string, unknown> = {
+    ...existing,
+    env: {
+      CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+      CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
+      CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
+    },
+  };
+
+  if (googleToken) {
+    settings.mcpServers = {
+      gmail: {
+        type: 'sse',
+        url: 'https://gmailmcp.googleapis.com/',
+        headers: { Authorization: `Bearer ${googleToken}` },
+      },
+      calendar: {
+        type: 'sse',
+        url: 'https://calendarmcp.googleapis.com/',
+        headers: { Authorization: `Bearer ${googleToken}` },
+      },
+      drive: {
+        type: 'sse',
+        url: 'https://drivemcp.googleapis.com/',
+        headers: { Authorization: `Bearer ${googleToken}` },
+      },
+    };
+  }
+
+  fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + '\n');
+}
+
 async function buildContainerArgs(
   mounts: VolumeMount[],
   containerName: string,
@@ -335,7 +369,6 @@ async function buildContainerArgs(
   return args;
 }
 
-
 export async function runContainerAgent(
   group: RegisteredGroup,
   input: ContainerInput,
@@ -348,6 +381,18 @@ export async function runContainerAgent(
   fs.mkdirSync(groupDir, { recursive: true });
 
   const mounts = buildVolumeMounts(group, input.isMain);
+
+  // Fetch Google access token (if credentials configured) and write settings
+  const googleToken =
+    GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REFRESH_TOKEN
+      ? await getGoogleAccessToken(
+          GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET,
+          GOOGLE_REFRESH_TOKEN,
+        )
+      : null;
+  writeGroupSettings(group.folder, googleToken);
+
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
   const agentIdentifier = input.isMain
