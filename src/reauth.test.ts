@@ -4,15 +4,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 // spawnMock: lazy arrow so the const is only read when the mock is called (not at hoist time)
 const spawnMock = vi.fn();
 
-// invalidateTokenCacheMock: vi.hoisted() runs at hoist time, making it available to vi.mock factory
-const invalidateTokenCacheMock = vi.hoisted(() => vi.fn());
-
 vi.mock('child_process', () => ({
   spawn: (...args: any[]) => spawnMock(...args),
-}));
-
-vi.mock('./credential-proxy.js', () => ({
-  invalidateTokenCache: invalidateTokenCacheMock,
 }));
 
 vi.mock('./logger.js', () => ({
@@ -34,7 +27,6 @@ describe('reauth', () => {
   beforeEach(() => {
     _resetForTesting();
     spawnMock.mockReset();
-    invalidateTokenCacheMock.mockReset();
   });
 
   afterEach(() => {
@@ -63,21 +55,6 @@ describe('reauth', () => {
 
     expect(messages[0]).toBe('https://claude.ai/oauth/authorize?code=true&x=1');
     expect(messages[1]).toBe('Authentication successful. New token is active.');
-  });
-
-  it('calls invalidateTokenCache() on success', async () => {
-    const proc = createMockProc();
-    spawnMock.mockReturnValue(proc);
-
-    const promise = handleReauth(async () => {});
-    proc.stdout.emit(
-      'data',
-      Buffer.from('visit: https://claude.ai/oauth/authorize?x=1\n'),
-    );
-    proc.emit('close', 0);
-    await promise;
-
-    expect(invalidateTokenCacheMock).toHaveBeenCalledOnce();
   });
 
   it('spawns claude auth login with BROWSER=cat', async () => {
@@ -110,7 +87,6 @@ describe('reauth', () => {
     await promise;
 
     expect(messages[0]).toContain('Authentication failed');
-    expect(invalidateTokenCacheMock).not.toHaveBeenCalled();
   });
 
   it('prevents concurrent reauths', async () => {
@@ -166,7 +142,6 @@ describe('reauth', () => {
 
     expect(messages[0]).toContain('timed out');
     expect(proc.kill).toHaveBeenCalled();
-    expect(invalidateTokenCacheMock).not.toHaveBeenCalled();
 
     vi.useRealTimers();
   });

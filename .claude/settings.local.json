@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(node_modules/.bin/tsc)",
+      "Bash(npm --version)",
+      "Bash(node_modules/.bin/vitest run *)",
+      "Bash(node_modules/.bin/tsc --noEmit)"
+    ]
+  }
+}

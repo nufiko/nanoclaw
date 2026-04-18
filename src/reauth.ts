@@ -1,6 +1,5 @@
 import { spawn, ChildProcess } from 'child_process';
 
-import { invalidateTokenCache } from './credential-proxy.js';
 import { logger } from './logger.js';
 
 const URL_REGEX = /visit: (https?:\/\/\S+)/;
@@ -49,7 +48,6 @@ export async function handleReauth(
       // already dead
     }
     activeReauth = null;
-    if (success) invalidateTokenCache();
     try {
       await sendMessage(message);
     } catch (err) {
